@@ -28,13 +28,11 @@ RUN apt-get update \
     texlive-xetex \
     texlive-fonts-recommended \
     texlive-generic-recommended \
-    # Optional dependency
-    #texlive-fonts-extra \
     # ----
     tzdata \
     unzip \
     #nano \
-  && rm -rf /var/lib/apt/lists/*
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 USER $NB_UID
 
@@ -42,23 +40,28 @@ RUN \
   conda config --system --append channels bioconda \
   && conda install mamba --quiet --yes \
   && mamba install --quiet --yes \
-    # bokeh 2.0.x breaks hexmaps
-    'bokeh=1.4.0' \
+    'bokeh=2.1.*' \
+    'jupyter_bokeh' \
     'conda-forge::blas=*=openblas' \
     'ipywidgets=7.5.*' \
-    'conda-forge::matplotlib-base=3.2.*' \
+    'matplotlib-base=3.2.*' \
     'conda-forge::r-base=4.0.2' \
     'conda-forge::r-essentials' \
-    'pandas=1.0.3' \
-    'protobuf=3.11.*' \
-    'scikit-learn=0.22.*' \
-    'scipy=1.4.*' \
-    'conda-forge::seaborn=0.9.*' \
+    'jupyter-lsp' \
+    'parallel' \
+    'pandas=1.1.*' \
+    'protobuf=3.12.*' \
+    'python-language-server' \
+    'scikit-learn=0.23.*' \
+    'scipy=1.5.*' \
+    'seaborn=0.10.*' \
+    'widgetsnbextension=3.5.*' \
     'xlrd=1.2.0' \
+  && mkdir ~/.parallel && touch ~/.parallel/will-cite \
   && conda clean --all -f -y \
   && conda init bash \
-  && fix-permissions $CONDA_DIR \
-  && fix-permissions /home/$NB_USER
+  && fix-permissions "${CONDA_DIR}" \
+  && fix-permissions "/home/${NB_USER}"
 
 # jupyter extensions
 RUN \
@@ -67,14 +70,23 @@ RUN \
   ## Also activate ipywidgets extension for JupyterLab
   # Check this URL for most recent compatibilities
   # https://github.com/jupyter-widgets/ipywidgets/tree/master/packages/jupyterlab-manager
-  && jupyter labextension install @jupyter-widgets/jupyterlab-manager@^1.1 --no-build \
-  ## table of contents, added for no colab option
-  && jupyter labextension install @jupyterlab/toc \ 
+  && jupyter labextension install @jupyter-widgets/jupyterlab-manager@^2.0.0 --no-build \
+  ## table of contents in left-hand panel for navigation
+  && jupyter labextension install @jupyterlab/toc --no-build \
+  ## our own modifications
+  && jupyter labextension install @epi2melabs/jupyterlab-autorun-cells --no-build \
+  && jupyter labextension install @epi2melabs/jupyterlab-play-cell-button --no-build \
+  && jupyter labextension install @epi2melabs/jupyterlab-code-cell-collapser --no-build \
+  && jupyter labextension install @epi2melabs/epi2melabs-splashpage --no-build \
+  ## allow markdown headings to collapse whole sections
+  && jupyter labextension install @aquirdturtle/collapsible_headings --no-build \
+  ## language server
+  && jupyter labextension install @krassowski/jupyterlab-lsp --no-build \
   ## colab extension
   && pip install --no-cache-dir jupyter_http_over_ws \
   && jupyter serverextension enable --py jupyter_http_over_ws \
   ## bokeh
-  && jupyter labextension install @bokeh/jupyter_bokeh --no-build \
+  && jupyter labextension install @bokeh/jupyter_bokeh@2.0.3 --no-build \
   ## interactive matplotlib graphs
   # DISABLED - doesn't work in colab, to enabled add back 'ipympl=0.5.0' to conda install
   #&& jupyter labextension install jupyter-matplotlib --no-build \
@@ -85,23 +97,32 @@ RUN \
   #&& jupyter labextension install plotlywidget@1.5.0 --no-build \
   #&& unset NODE_OPTIONS \
   ## github extension
-  # not needed in colab, added for nocolab option
-  && jupyter labextension install @jupyterlab/github --no-build \
-  && pip install jupyterlab_github \
+  # not needed in colab, added for nocolab option, removed as its
+  # unauthenticated and so of limited utility
+  #&& jupyter labextension install @jupyterlab/github --no-build \
+  #&& pip install jupyterlab_github \
   # build things
-  && jupyter lab build \
+  && jupyter lab build -y \
+  && jupyter lab clean -y \
   && npm cache clean --force \
-  && rm -rf $CONDA_DIR/share/jupyter/lab/staging \
-  && rm -rf /home/$NB_USER/.cache/yarn \
-  && rm -rf /home/$NB_USER/.node-gyp \
-  && fix-permissions $CONDA_DIR \
-  && fix-permissions /home/$NB_USER
+  && rm -rf "${CONDA_DIR}/share/jupyter/lab/staging" \
+  && rm -rf "/home/${NB_USER}/.cache/yarn" \
+  && rm -rf "/home/${NB_USER}/.node-gyp" \
+  && fix-permissions "${CONDA_DIR}" \
+  && fix-permissions "/home/${NB_USER}"
+
+# copy user settings for jupyterlab
+USER root
+COPY user-settings /home/$NB_USER/.jupyter/lab/user-settings
+COPY config/pycodestyle /home/$NB_USER/.config/ 
+RUN fix-permissions "/home/${NB_USER}"
+USER $NB_UID
 
 # Import matplotlib the first time to build the font cache.
-ENV XDG_CACHE_HOME /home/$NB_USER/.cache/
+ENV XDG_CACHE_HOME="/home/${NB_USER}/.cache/"
 RUN \
   MPLBACKEND=Agg python -c "import matplotlib.pyplot" \
-  && fix-permissions /home/$NB_USER
+  && fix-permissions "/home/${NB_USER}"
 
 USER $NB_UID
 
